@@ -2,7 +2,7 @@ import streamlit as st
 import sqlite3
 import hashlib
 import os
-#from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet
 
 KEY_FILE = "simple_secret.key"
 
