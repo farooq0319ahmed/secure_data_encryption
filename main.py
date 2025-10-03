@@ -117,3 +117,6 @@ elif choice == "Login":
             st.success("✅ Reauthorized successfully.")
         else:
             st.error("❌ Wrong master password.")
+
+st.markdown("<div class='footer'>Created with ❤️ by Farooq Ahmed /div>", unsafe_allow_html=True)
+
