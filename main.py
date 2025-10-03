@@ -24,11 +24,11 @@ def init_db():
     c = conn.cursor()
     c.execute("""
         CREATE TABLE IF NOT EXISTS vault (
-              label TEXT PRIMARY KEY,
-              encrypted_text TEXT,
-              passkey TEXT
-              )
-              """)
+            label TEXT PRIMARY KEY,
+            encrypted_text TEXT,
+            passkey TEXT
+            )
+            """)
     conn.commit()
     conn.close()
 
@@ -64,7 +64,7 @@ if choice == "Store Secret":
 
             try:
                 c.execute("INSERT INTO vault (label, encrypted_text, passkey) VALUES (?,?,?)",
-                          (label,encrypted,hashed_key))
+                        (label,encrypted,hashed_key))
                 conn.commit()
                 st.success("Secret saved successfully!")
             except sqlite3.IntegrityError:
