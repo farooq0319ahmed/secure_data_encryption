@@ -1,98 +1,119 @@
 import streamlit as st
-import sqlite3
 import hashlib
 import os
+import json
+import time
 from cryptography.fernet import Fernet
 
-KEY_FILE = "simple_secret.key"
+# --- Key Management ---
+KEY_FILE = "secret.key"
 
 def load_key():
     if not os.path.exists(KEY_FILE):
         key = Fernet.generate_key()
-        with open(KEY_FILE,"wb") as f:
+        with open(KEY_FILE, "wb") as f:
             f.write(key)
     else:
-        with open(KEY_FILE,"rb") as f:
+        with open(KEY_FILE, "rb") as f:
             key = f.read()
     return key
 
-
 cipher = Fernet(load_key())
 
-def init_db():
-    conn = sqlite3.connect("simple_data.db")
-    c = conn.cursor()
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS vault (
-            label TEXT PRIMARY KEY,
-            encrypted_text TEXT,
-            passkey TEXT
-            )
-            """)
-    conn.commit()
-    conn.close()
+# --- Data Storage ---
+DATA_FILE = "data.json"
 
-init_db()
+def load_data():
+    if os.path.exists(DATA_FILE):
+        with open(DATA_FILE, "r") as f:
+            return json.load(f)
+    return {}
 
+def save_data(data):
+    with open(DATA_FILE, "w") as f:
+        json.dump(data, f)
+
+# Initialize session state
+if "failed_attempts" not in st.session_state:
+    st.session_state.failed_attempts = 0
+if "is_logged_in" not in st.session_state:
+    st.session_state.is_logged_in = True
+
+stored_data = load_data()
+
+# --- Helpers ---
 def hash_passkey(passkey):
     return hashlib.sha256(passkey.encode()).hexdigest()
 
-def encrypt(text):
+def encrypt_data(text):
     return cipher.encrypt(text.encode()).decode()
 
-def decrypt(encrypted_text):
+def decrypt_data(encrypted_text):
     return cipher.decrypt(encrypted_text.encode()).decode()
 
-st.title("Secure Data Encryption App")
-menu = ["Store Secret","Retrieve Secret"]
-choice = st.sidebar.selectbox("Choose Option",menu)
+# --- UI Begins ---
+st.title("🔐 Secure Data Encryption App")
 
-if choice == "Store Secret":
-    st.header("Store a New Secret")
+menu = ["Home", "Store Data", "Retrieve Data", "Login"]
+choice = st.sidebar.radio("Navigation", menu)
 
-    label = st.text_input("Label (Unique ID): ")
-    secret = st.text_area("Your Secret")
-    passkey = st.text_input("Passkey (to protect it):", type="password")
+if choice == "Home":
+    st.subheader("🏠 Welcome")
+    st.write("This app securely **stores and retrieves your data** using encryption and passkeys.")
 
-    if st.button("Enrypt and save"):
-        if label and secret and passkey:
-            conn = sqlite3.connect("simple_data.db")
-            c = conn. cursor()
+elif choice == "Store Data":
+    st.subheader("📥 Store Data")
+    label = st.text_input("Label for your data (e.g., 'Note1'):")
+    plain_text = st.text_area("Enter your data:")
+    passkey = st.text_input("Set a Passkey:", type="password")
 
-            encrypted = encrypt(secret)
-            hashed_key = hash_passkey(passkey)
-
-            try:
-                c.execute("INSERT INTO vault (label, encrypted_text, passkey) VALUES (?,?,?)",
-                        (label,encrypted,hashed_key))
-                conn.commit()
-                st.success("Secret saved successfully!")
-            except sqlite3.IntegrityError:
-                st.error("Label already exists!")
-            conn.close()
+    if st.button("Encrypt and Store"):
+        if label and plain_text and passkey:
+            encrypted = encrypt_data(plain_text)
+            hashed_pass = hash_passkey(passkey)
+            stored_data[label] = {"encrypted_text": encrypted, "passkey": hashed_pass}
+            save_data(stored_data)
+            st.success("✅ Data encrypted and saved!")
         else:
-            st.warning("Please fill all fields")
+            st.error("⚠️ All fields are required.")
 
-elif choice == "Retrieve Secret":
-    st.header("Retrieve Your Secret")
+elif choice == "Retrieve Data":
+    st.subheader("🔎 Retrieve Data")
 
-    label = st.text_input("Enter Label:")
-    passkey = st.text_input("Enter Passkey:" , type="password")
+    if not st.session_state.is_logged_in:
+        st.warning("🔒 Please reauthorize to continue.")
+        st.stop()
+
+    label = st.text_input("Enter Label of Data:")
+    passkey = st.text_input("Enter Passkey:", type="password")
 
     if st.button("Decrypt"):
-        conn = sqlite3.connect("simple_data.db")
-        c = conn.cursor()
-        c.execute("SELECT encrypted_text, passkey FROM vault WHERE label=?",(label,))
-        result = c.fetchone()
-        conn.close()
+        if label in stored_data:
+            correct_hash = stored_data[label]["passkey"]
+            encrypted_text = stored_data[label]["encrypted_text"]
 
-        if result:
-            encrypted_text , stored_hash = result
-            if hash_passkey(passkey) == stored_hash:
-                decrypted = decrypt(encrypted_text)
-                st.success("Here is your secret")
-                st.code(decrypted)
+            if hash_passkey(passkey) == correct_hash:
+                result = decrypt_data(encrypted_text)
+                st.success(f"✅ Decrypted Data:\n\n{result}")
+                st.session_state.failed_attempts = 0
             else:
-                st.error("Incorrect passkey")
+                st.session_state.failed_attempts += 1
+                attempts_left = 3 - st.session_state.failed_attempts
+                st.error(f"❌ Incorrect passkey! Attempts left: {attempts_left}")
+                if st.session_state.failed_attempts >= 3:
+                    st.session_state.is_logged_in = False
+                    st.warning("🚫 Too many attempts. Please login again.")
         else:
-            st.warning("No such label found")
+            st.error("⚠️ Label not found!")
+
+elif choice == "Login":
+    st.subheader("🔐 Reauthorization")
+    master_pass = st.text_input("Enter Master Password (hint: admin123)", type="password")
+
+    if st.button("Login"):
+        if master_pass == "admin123":
+            st.session_state.failed_attempts = 0
+            st.session_state.is_logged_in = True
+            st.success("✅ Reauthorized successfully.")
+        else:
+            st.error("❌ Wrong master password.")
